@@ -1,0 +1,13 @@
+{
+  "StartAt": "StoreWorkData",
+  "States": {
+    "StoreWorkData": {
+      "Type": "Pass",
+      "Next": "CreateWorkSchedule"
+    },
+    "CreateWorkSchedule": {
+      "Type": "Pass",
+      "End": true
+    }
+  }
+}

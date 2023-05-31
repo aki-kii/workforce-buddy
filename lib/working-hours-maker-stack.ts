@@ -1,4 +1,5 @@
 import * as cdk from "aws-cdk-lib";
+import * as fs from "fs";
 import {
   aws_lambda as lambda,
   aws_s3 as s3,
@@ -11,6 +12,10 @@ import {
 export class WorkScheduleMakerStack extends cdk.Stack {
   constructor(scope: cdk.App, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
+
+    const definitionString = fs
+      .readFileSync("./src/stepfunctions/WorkScheduleStatemachine.asl.json")
+      .toString();
 
     /* S3 Bucket */
     const bucket = new s3.Bucket(this, "WorkScheduleBucket", {
@@ -60,16 +65,17 @@ export class WorkScheduleMakerStack extends cdk.Stack {
     );
 
     /* Step Functions */
-    const stateMachine = new sfn.StateMachine(
+    const statemachine = new sfn.StateMachine(
       this,
-      "WorkScheduleStateMachine",
+      "WorkScheduleStatemachine",
       {
         stateMachineName: "WorkScheduleStateMachine",
-        definition: new sfn.Pass(this, "StoreWorkData").next(
-          new sfn.Pass(this, "CreateWorkSchedule")
-        ),
+        definition: new sfn.Pass(this, "dummy"),
       }
     );
+    const cfnStatemachine = statemachine.node
+      .defaultChild as sfn.CfnStateMachine;
+    cfnStatemachine.definitionString = definitionString;
 
     /* Event Bridge */
     new events.Rule(this, "Rule", {
@@ -82,7 +88,7 @@ export class WorkScheduleMakerStack extends cdk.Stack {
           object: { key: [{ prefix: "raw/" }] },
         },
       },
-      targets: [new targets.SfnStateMachine(stateMachine)],
+      targets: [new targets.SfnStateMachine(statemachine)],
     });
   }
 }
