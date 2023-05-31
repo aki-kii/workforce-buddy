@@ -8,13 +8,13 @@ import {
   aws_events_targets as targets,
 } from "aws-cdk-lib";
 
-export class WorkingHoursMakerStack extends cdk.Stack {
+export class WorkScheduleMakerStack extends cdk.Stack {
   constructor(scope: cdk.App, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
     /* S3 Bucket */
-    const bucket = new s3.Bucket(this, "Bucket", {
-      bucketName: "working-hours-bucket",
+    const bucket = new s3.Bucket(this, "WorkScheduleBucket", {
+      bucketName: "work-schedule-bucket",
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       encryption: s3.BucketEncryption.S3_MANAGED,
       enforceSSL: true,
@@ -33,11 +33,11 @@ export class WorkingHoursMakerStack extends cdk.Stack {
     ];
 
     /* Lambda Function */
-    const getWorkingHours = new lambda.Function(this, "GetWorkingHours", {
-      functionName: "get_working_hours",
+    const getWorkData = new lambda.Function(this, "GetWorkData", {
+      functionName: "get_work_data",
       runtime: lambda.Runtime.PYTHON_3_9,
-      code: lambda.Code.fromAsset("src/lambda/get_working_hours"),
-      handler: "get_working_hours.lambda_handler",
+      code: lambda.Code.fromAsset("src/lambda/get_work_data"),
+      handler: "get_work_data.lambda_handler",
       layers: lambdaLayers,
       environment: {
         BUCKET_NAME: bucket.bucketName,
@@ -45,14 +45,14 @@ export class WorkingHoursMakerStack extends cdk.Stack {
           "xoxb-4861309306404-4882559323600-6WxJzyvCdA8Af95rH7mO79ns",
       },
     });
-    getWorkingHours.addFunctionUrl({
+    getWorkData.addFunctionUrl({
       authType: lambda.FunctionUrlAuthType.NONE,
       cors: {
         allowedMethods: [lambda.HttpMethod.ALL],
         allowedOrigins: ["*"],
       },
     });
-    getWorkingHours.addToRolePolicy(
+    getWorkData.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["s3:PutObject", "s3:DeleteObject"],
         resources: [`${bucket.bucketArn}*`],
