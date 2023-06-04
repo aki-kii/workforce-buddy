@@ -3,6 +3,7 @@ import * as fs from "fs";
 import {
   aws_lambda as lambda,
   aws_s3 as s3,
+  aws_dynamodb as dynamodb,
   aws_events as events,
   aws_stepfunctions as sfn,
   aws_iam as iam,
@@ -89,6 +90,19 @@ export class WorkScheduleMakerStack extends cdk.Stack {
         },
       },
       targets: [new targets.SfnStateMachine(statemachine)],
+    });
+
+    /* DynamoDB */
+    const table = new dynamodb.Table(this, "WorkScheduleTable", {
+      tableName: "WorkScheduleTable",
+      partitionKey: {
+        name: "id",
+        type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: "SK",
+        type: dynamodb.AttributeType.STRING,
+      },
     });
   }
 }
