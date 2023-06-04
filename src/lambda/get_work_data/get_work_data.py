@@ -17,8 +17,6 @@ NORMAL_RESULT = "0000"
 FAILED_GET_FILE = "0010"
 
 s3 = boto3.client("s3")
-ssm = boto3.client("ssm")
-
 
 def lambda_handler(event: dict, context: dict) -> dict:
     """
