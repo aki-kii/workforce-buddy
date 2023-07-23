@@ -1,173 +1,158 @@
 {
   "Comment": "A description of my state machine",
-  "StartAt": "Invoke StoreWorkData",
+  "StartAt": "Parallel",
   "States": {
-    "Invoke StoreWorkData": {
-      "Type": "Task",
-      "Resource": "arn:aws:states:::lambda:invoke",
-      "Parameters": {
-        "Payload.$": "$",
-        "FunctionName": "STORE_WORK_DATA_LAMBDA_ARN"
-      },
-      "Retry": [
+    "Parallel": {
+      "Type": "Parallel",
+      "Branches": [
         {
-          "ErrorEquals": [
-            "Lambda.ServiceException",
-            "Lambda.AWSLambdaException",
-            "Lambda.SdkClientException",
-            "Lambda.TooManyRequestsException"
-          ],
-          "IntervalSeconds": 2,
-          "MaxAttempts": 3,
-          "BackoffRate": 2
-        }
-      ],
-      "Next": "GetUserConfig",
-      "ResultSelector": {
-        "work_info.$": "$.Payload"
-      }
-    },
-    "GetUserConfig": {
-      "Type": "Task",
-      "Next": "ExistenceOfUserConfig",
-      "Parameters": {
-        "TableName": "WORKSCHEDULE_TABLE_NAME",
-        "ExpressionAttributeValues": {
-          ":id": {
-            "S.$": "$.work_info.user_id"
-          },
-          ":user_data": {
-            "S": "UserConfig"
-          }
-        },
-        "KeyConditionExpression": "id = :id AND begins_with( SK, :user_data)",
-        "ScanIndexForward": false
-      },
-      "Resource": "arn:aws:states:::aws-sdk:dynamodb:query",
-      "ResultSelector": {
-        "Item.$": "$.Items[0]"
-      },
-      "ResultPath": "$.user_config"
-    },
-    "ExistenceOfUserConfig": {
-      "Type": "Choice",
-      "Choices": [
-        {
-          "Variable": "$.user_config.Item",
-          "IsNull": true,
-          "Next": "Start CreateUserConfig"
-        }
-      ],
-      "Default": "GetTemplateConfig"
-    },
-    "Start CreateUserConfig": {
-      "Type": "Task",
-      "Resource": "arn:aws:states:::states:startExecution.sync:2",
-      "Parameters": {
-        "StateMachineArn": "CREATE_USER_CONFIG_STATEMACHINE_ARN",
-        "Input.$": "$"
-      },
-      "OutputPath": "$.Output",
-      "Next": "GetUserConfig"
-    },
-    "GetTemplateConfig": {
-      "Type": "Task",
-      "Resource": "arn:aws:states:::dynamodb:getItem",
-      "Parameters": {
-        "TableName": "WORKSCHEDULE_TABLE_NAME",
-        "Key": {
-          "id": {
-            "S.$": "$.user_config.Item.template_id.S"
-          },
-          "SK": {
-            "S": "TemplateConfig"
-          }
-        }
-      },
-      "Next": "Map",
-      "ResultSelector": {
-        "Item.$": "$.Item"
-      },
-      "ResultPath": "$.template_config"
-    },
-    "Map": {
-      "Type": "Map",
-      "ItemProcessor": {
-        "ProcessorConfig": {
-          "Mode": "INLINE"
-        },
-        "StartAt": "Invoke CreateWorkSchedule",
-        "States": {
-          "Invoke CreateWorkSchedule": {
-            "Type": "Task",
-            "Resource": "arn:aws:states:::lambda:invoke",
-            "OutputPath": "$.Payload",
-            "Parameters": {
-              "Payload.$": "$",
-              "FunctionName": "CREATE_WORK_SCHEDULE_LAMBDA_ARN"
+          "StartAt": "GetWorkData Invoke",
+          "States": {
+            "GetWorkData Invoke": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "Payload.$": "$",
+                "FunctionName": "GET_WORK_DATA_LAMBDA_ARN"
+              },
+              "Next": "StoreWorkData Invoke",
+              "ResultSelector": {
+                "result.$": "$.Payload"
+              },
+              "ResultPath": "$.file_info"
             },
-            "Retry": [
-              {
-                "ErrorEquals": [
-                  "Lambda.ServiceException",
-                  "Lambda.AWSLambdaException",
-                  "Lambda.SdkClientException",
-                  "Lambda.TooManyRequestsException"
-                ],
-                "IntervalSeconds": 2,
-                "MaxAttempts": 6,
-                "BackoffRate": 2
+            "StoreWorkData Invoke": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "Payload.$": "$",
+                "FunctionName": "STORE_WORK_DATA_LAMBDA_ARN"
+              },
+              "Next": "GetUserConfig",
+              "ResultPath": "$.work_info",
+              "ResultSelector": {
+                "result.$": "$.Payload"
               }
-            ],
-            "End": true
+            },
+            "GetUserConfig": {
+              "Type": "Task",
+              "Parameters": {
+                "TableName": "WORKSCHEDULE_TABLE_NAME",
+                "ExpressionAttributeValues": {
+                  ":id": {
+                    "S.$": "$.work_info.result.user_id"
+                  },
+                  ":user_data": {
+                    "S": "UserConfig"
+                  }
+                },
+                "KeyConditionExpression": "id = :id AND begins_with( SK, :user_data)",
+                "ScanIndexForward": false
+              },
+              "Resource": "arn:aws:states:::aws-sdk:dynamodb:query",
+              "ResultSelector": {
+                "Item.$": "$.Items[0]"
+              },
+              "ResultPath": "$.user_config",
+              "Next": "ExistenceOfUserConfig"
+            },
+            "ExistenceOfUserConfig": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.user_config.Item",
+                  "IsNull": true,
+                  "Next": "Start CreateUserConfig"
+                }
+              ],
+              "Default": "GetTemplateConfig"
+            },
+            "Start CreateUserConfig": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::states:startExecution.sync:2",
+              "Parameters": {
+                "StateMachineArn": "CREATE_USER_CONFIG_STATEMACHINE_ARN",
+                "Input.$": "$"
+              },
+              "OutputPath": "$.Output",
+              "Next": "GetUserConfig"
+            },
+            "GetTemplateConfig": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::dynamodb:getItem",
+              "Parameters": {
+                "TableName": "WORKSCHEDULE_TABLE_NAME",
+                "Key": {
+                  "id": {
+                    "S.$": "$.user_config.Item.template_id.S"
+                  },
+                  "SK": {
+                    "S": "TemplateConfig"
+                  }
+                }
+              },
+              "ResultSelector": {
+                "Item.$": "$.Item"
+              },
+              "ResultPath": "$.template_config",
+              "Next": "Map"
+            },
+            "Map": {
+              "Type": "Map",
+              "ItemProcessor": {
+                "ProcessorConfig": {
+                  "Mode": "INLINE"
+                },
+                "StartAt": "CreateWorkSchedule Invoke",
+                "States": {
+                  "CreateWorkSchedule Invoke": {
+                    "Type": "Task",
+                    "Resource": "arn:aws:states:::lambda:invoke",
+                    "OutputPath": "$.Payload",
+                    "Parameters": {
+                      "Payload.$": "$",
+                      "FunctionName": "CREATE_WORK_SCHEDULE_LAMBDA_ARN"
+                    },
+                    "End": true
+                  }
+                }
+              },
+              "MaxConcurrency": 3,
+              "ItemsPath": "$.work_info.result.work_months",
+              "ItemSelector": {
+                "work_months.$": "$$.Map.Item.Value",
+                "work_info.$": "$.work_info",
+                "user_config.$": "$.user_config",
+                "template_config.$": "$.template_config"
+              },
+              "Next": "SendWorkSchedule Invoke",
+              "ResultPath": "$.work_schedule_info_list"
+            },
+            "SendWorkSchedule Invoke": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "Payload.$": "$",
+                "FunctionName": "SEND_WORK_SCHEDULE_LAMBDA_ARN"
+              },
+              "End": true
+            }
           }
         }
-      },
-      "MaxConcurrency": 3,
-      "ItemsPath": "$.work_info.work_months",
-      "ItemSelector": {
-        "work_months.$": "$$.Map.Item.Value",
-        "work_info.$": "$.work_info",
-        "user_config.$": "$.user_config",
-        "template_config.$": "$.template_config"
-      },
-      "Next": "Set channel",
-      "ResultSelector": {
-        "work_schedule_info_list.$": "$"
-      }
-    },
-    "Set channel": {
-      "Type": "Pass",
-      "Next": "Invoke SendWorkSchedule",
-      "Parameters": {
-        "work_schedule_info_list.$": "$.work_schedule_info_list",
-        "slack_info": {
-          "channel_name": "#working-hours-maker"
-        }
-      }
-    },
-    "Invoke SendWorkSchedule": {
-      "Type": "Task",
-      "Resource": "arn:aws:states:::lambda:invoke",
-      "OutputPath": "$.Payload",
-      "Parameters": {
-        "Payload.$": "$",
-        "FunctionName": "SEND_WORK_SCHEDULE_LAMBDA_ARN"
-      },
-      "Retry": [
+      ],
+      "End": true,
+      "Catch": [
         {
           "ErrorEquals": [
-            "Lambda.ServiceException",
-            "Lambda.AWSLambdaException",
-            "Lambda.SdkClientException",
-            "Lambda.TooManyRequestsException"
+            "States.TaskFailed"
           ],
-          "IntervalSeconds": 2,
-          "MaxAttempts": 6,
-          "BackoffRate": 2
+          "Next": "ErrorTermination"
         }
-      ],
-      "End": true
+      ]
+    },
+    "ErrorTermination": {
+      "Type": "Succeed"
     }
   }
 }

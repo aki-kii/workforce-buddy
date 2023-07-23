@@ -1,16 +1,15 @@
 import * as cdk from "aws-cdk-lib";
-import * as fs from "fs";
 import {
   aws_dynamodb as dynamodb,
   aws_events as events,
-  aws_events_targets as targets,
-  aws_lambda as lambda,
   aws_iam as iam,
+  aws_lambda as lambda,
   aws_s3 as s3,
-  aws_ssm as ssm,
   aws_stepfunctions as sfn,
+  aws_ssm as ssm,
+  aws_events_targets as targets,
 } from "aws-cdk-lib";
-import { LifecycleRule } from "aws-cdk-lib/aws-s3";
+import * as fs from "fs";
 export class WorkScheduleMakerStack extends cdk.Stack {
   constructor(scope: cdk.App, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -46,6 +45,11 @@ export class WorkScheduleMakerStack extends cdk.Stack {
       "slackLayer",
       "arn:aws:lambda:ap-northeast-1:080455691515:layer:python_package_for_slack:2"
     );
+    const slackBoltLayer = lambda.LayerVersion.fromLayerVersionArn(
+      this,
+      "slackBoltLayer",
+      "arn:aws:lambda:ap-northeast-1:080455691515:layer:BoltLayerDF8D0C33:2"
+    );
     const pandasLayer = lambda.LayerVersion.fromLayerVersionArn(
       this,
       "pandasLayer",
@@ -58,14 +62,55 @@ export class WorkScheduleMakerStack extends cdk.Stack {
     );
 
     /* Lambda Function */
+    const slackSigningSecret = ssm.StringParameter.valueForStringParameter(
+      this,
+      "/workforce_buddy/slack_signing_secret"
+    );
     const slackBotToken = ssm.StringParameter.valueForStringParameter(
       this,
-      "/work-schedule-maker/slack_bot_token"
+      "/workforce_buddy/slack_bot_token"
     );
     const slackBotId = ssm.StringParameter.valueForStringParameter(
       this,
-      "/work-schedule-maker/slack_bot_id"
+      "/workforce_buddy/slack_bot_id"
     );
+    const handleWorkforceBuddy = new lambda.Function(
+      this,
+      "handleWorkforceBuddy",
+      {
+        functionName: "handleWorkforceBuddy",
+        runtime: lambda.Runtime.PYTHON_3_9,
+        code: lambda.Code.fromAsset("src/lambda/handle_workforce_buddy"),
+        handler: "handle_workforce_buddy.lambda_handler",
+        layers: [slackBoltLayer],
+        timeout: cdk.Duration.minutes(1),
+        environment: {
+          SLACK_SIGNING_SECRET: slackSigningSecret,
+          SLACK_BOT_TOKEN: slackBotToken,
+          SLACK_BOT_ID: slackBotId,
+        },
+      }
+    );
+    handleWorkforceBuddy.addFunctionUrl({
+      authType: lambda.FunctionUrlAuthType.NONE,
+      cors: {
+        allowedMethods: [lambda.HttpMethod.ALL],
+        allowedOrigins: ["*"],
+      },
+    });
+    handleWorkforceBuddy.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["states:StartExecution"],
+        resources: ["*"],
+      })
+    );
+    handleWorkforceBuddy.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["lambda:InvokeFunction"],
+        resources: ["*"],
+      })
+    );
+
     const getWorkData = new lambda.Function(this, "GetWorkData", {
       functionName: "GetWorkData",
       runtime: lambda.Runtime.PYTHON_3_9,
@@ -76,14 +121,6 @@ export class WorkScheduleMakerStack extends cdk.Stack {
       environment: {
         BUCKET_NAME: bucket.bucketName,
         SLACK_BOT_TOKEN: slackBotToken,
-        SLACK_BOT_ID: slackBotId,
-      },
-    });
-    getWorkData.addFunctionUrl({
-      authType: lambda.FunctionUrlAuthType.NONE,
-      cors: {
-        allowedMethods: [lambda.HttpMethod.ALL],
-        allowedOrigins: ["*"],
       },
     });
     getWorkData.addToRolePolicy(
@@ -102,6 +139,7 @@ export class WorkScheduleMakerStack extends cdk.Stack {
       timeout: cdk.Duration.minutes(1),
       environment: {
         TABLE_NAME: table.tableName,
+        BUCKET_NAME: bucket.bucketName,
       },
     });
     storeWorkData.addToRolePolicy(
@@ -170,7 +208,7 @@ export class WorkScheduleMakerStack extends cdk.Stack {
       `${table.tableName}`
     );
     // ステートマシン
-    const createuserconfig_statemachine = new sfn.StateMachine(
+    const createUserConfigStatemachine = new sfn.StateMachine(
       this,
       "CreateUserConfigStatemachine",
       {
@@ -179,7 +217,7 @@ export class WorkScheduleMakerStack extends cdk.Stack {
       }
     );
     // IAM Role
-    createuserconfig_statemachine.addToRolePolicy(
+    createUserConfigStatemachine.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["dynamodb:Query", "dynamodb:GetItem", "dynamodb:PutItem"],
         resources: [table.tableArn],
@@ -190,6 +228,10 @@ export class WorkScheduleMakerStack extends cdk.Stack {
       .readFileSync("./src/stepfunctions/WorkScheduleStatemachine.asl.json")
       .toString();
     definitionString = definitionString
+      .replace(
+        /GET_WORK_DATA_LAMBDA_ARN/g,
+        `${getWorkData.functionArn}:$LATEST`
+      )
       .replace(
         /STORE_WORK_DATA_LAMBDA_ARN/g,
         `${storeWorkData.functionArn}:$LATEST`
@@ -202,7 +244,11 @@ export class WorkScheduleMakerStack extends cdk.Stack {
         /SEND_WORK_SCHEDULE_LAMBDA_ARN/g,
         `${SendWorkSchedule.functionArn}:$LATEST`
       )
-      .replace(/WORKSCHEDULE_TABLE_NAME/g, `${table.tableName}`);
+      .replace(/WORKSCHEDULE_TABLE_NAME/g, `${table.tableName}`)
+      .replace(
+        /CREATE_USER_CONFIG_STATEMACHINE_ARN/g,
+        `${createUserConfigStatemachine.stateMachineArn}`
+      );
     const workschedule_statemachine = new sfn.StateMachine(
       this,
       "WorkScheduleStatemachine",
@@ -231,7 +277,7 @@ export class WorkScheduleMakerStack extends cdk.Stack {
     workschedule_statemachine.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["states:StartExecution"],
-        resources: [createuserconfig_statemachine.stateMachineArn],
+        resources: [createUserConfigStatemachine.stateMachineArn],
       })
     );
     workschedule_statemachine.addToRolePolicy(

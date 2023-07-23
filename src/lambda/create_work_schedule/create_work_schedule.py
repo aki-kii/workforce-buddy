@@ -92,7 +92,7 @@ def logic(event: dict) -> dict:
             k: deserializer.deserialize(v)
             for k, v in event["template_config"]["Item"].items()
         }
-        work_info: dict = event["work_info"]
+        work_info: dict = event["work_info"]["result"]
         work_month: str = event["work_months"]
         bucket_name: str = os.environ["BUCKET_NAME"]
         table_name: str = os.environ["TABLE_NAME"]
@@ -381,6 +381,7 @@ def create_response(
 
     Returns:
         dict:
+            work_month (str): 勤務月(ex: '2023-07')
             bucket_name (str): アップロード先S3バケット名
             object_name (str): アップロードしたファイル名
     """

@@ -100,9 +100,8 @@ def logic(event: dict) -> dict:
     """
     # 環境情報の読み出し
     try:
-        s3_bucket: str = event["detail"]["bucket"]["name"]
-        s3_path: str = event["detail"]["object"]["key"]
-        logger.info(f"s3_bucket: {s3_bucket}, s3_path: {s3_path}")
+        file_name: str = event["file_info"]["result"]["file_name"]
+        bucket_name: str = os.environ["BUCKET_NAME"]
 
     except Exception:
         logger.error("環境情報の読み出しに失敗しました")
@@ -112,7 +111,9 @@ def logic(event: dict) -> dict:
     work_file: Optional[bytes] = None
     try:
         work_file = (
-            s3.get_object(Bucket=s3_bucket, Key=s3_path).get("Body").read()
+            s3.get_object(Bucket=bucket_name, Key=f"raw/{file_name}")
+            .get("Body")
+            .read()
         )
 
     except Exception:

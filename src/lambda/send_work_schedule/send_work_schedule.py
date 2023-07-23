@@ -60,7 +60,8 @@ def logic(event: dict) -> dict:
                     bucket_name (str)
                     object_name (str)
             slack_info (dict)
-                channel_name: str
+                channel_id (str)
+                user_id(str)
 
     Returns:
         dict: レスポンス
@@ -70,7 +71,7 @@ def logic(event: dict) -> dict:
     # ファイル情報の読み出し
     try:
         work_schedule_info_list: dict = event["work_schedule_info_list"]
-        channel_name: str = event["slack_info"]["channel_name"]
+        slack_info: dict = event["slack_info"]
     except Exception:
         logger.error("ファイル情報の読み出しに失敗しました")
         raise WorkforceBuddyException
@@ -84,9 +85,9 @@ def logic(event: dict) -> dict:
             work_schedule_info, retrieved_file, uploaded_files
         )
         # ファイルをチャンネルに共有
-        share_file_to_channel(work_schedule_info, channel_name, uploaded_file)
+        share_file_to_channel(work_schedule_info, slack_info, uploaded_file)
 
-    res: dict = create_response(channel_name, uploaded_files)
+    res: dict = create_response(slack_info, uploaded_files)
 
     return res
 
@@ -157,14 +158,14 @@ def upload_file_to_slack(
 
 
 def share_file_to_channel(
-    work_schedule_info: dict, channel_name: str, uploaded_file: SlackResponse
+    work_schedule_info: dict, slack_info: dict, uploaded_file: SlackResponse
 ) -> None:
     """
     Slackにアップロードされているファイルをチャンネルに共有する
 
     Args:
         work_schedule_info (dict): 勤務月(ex: '2023-07')
-        channel_name (str): Slackのチャンネル名
+        slack_info (dit): アップロード先のSlack情報
         uploaded_file (SlackResponse): Slackへアップロードされたファイルの情報
     """
     # 勤務した月の変換
@@ -177,15 +178,15 @@ def share_file_to_channel(
     try:
         file_url: str = uploaded_file["file"]["permalink"]
         slack.chat_postMessage(
-            channel=channel_name,
-            text=f"{year}年{month}月の勤務表ができました！: {file_url}",
+            channel=slack_info["channel_id"],
+            text=f"<@{slack_info['user_id']}>\n{year}年{month}月の勤務表ができました！:\n{file_url}",
         )
     except Exception as err:
         logger.error(f"ファイルの共有に失敗しました\n{err}")
         raise WorkforceBuddyException
 
 
-def create_response(channel_name: str, uploaded_files: list[str]) -> dict:
+def create_response(slack_info: dict, uploaded_files: list[str]) -> dict:
     """
     関数の返却値を生成する
 
@@ -199,7 +200,8 @@ def create_response(channel_name: str, uploaded_files: list[str]) -> dict:
             uploaded_files (list[str]): アップロードしたファイル名
     """
     res: dict = {
-        "channel_name": channel_name,
+        "channel_name": slack_info["channel_id"],
+        "user_id": slack_info["user_id"],
         "uploaded_files": uploaded_files,
     }
 
