@@ -1,0 +1,79 @@
+{
+  "Comment": "A description of my state machine",
+  "StartAt": "GetBasicUserConfig",
+  "States": {
+    "GetBasicUserConfig": {
+      "Type": "Task",
+      "Next": "ConvertDatetime",
+      "Parameters": {
+        "TableName": "WORKSCHEDULE_DYNAMODB_TABLE_NAME",
+        "ExpressionAttributeValues": {
+          ":id": {
+            "S": "0000000"
+          },
+          ":user_data": {
+            "S": "UserConfig"
+          }
+        },
+        "KeyConditionExpression": "id = :id AND begins_with( SK, :user_data)",
+        "ScanIndexForward": false
+      },
+      "Resource": "arn:aws:states:::aws-sdk:dynamodb:query",
+      "ResultPath": "$.user_config",
+      "ResultSelector": {
+        "Item.$": "$.Items[0]"
+      }
+    },
+    "ConvertDatetime": {
+      "Type": "Pass",
+      "Next": "MakeReplaceConfig",
+      "Parameters": {
+        "entered_time.$": "States.Format('{} {}', States.ArrayGetItem(States.StringSplit($$.State.EnteredTime, 'T.'), 0), States.ArrayGetItem(States.StringSplit($$.State.EnteredTime, 'T.'), 1))"
+      },
+      "ResultPath": "$.datetime"
+    },
+    "MakeReplaceConfig": {
+      "Type": "Pass",
+      "Next": "ReplaceConfig",
+      "ResultPath": "$.replace_user_config",
+      "Parameters": {
+        "Item": {
+          "created_at": {
+            "S.$": "$.datetime.entered_time"
+          },
+          "id": {
+            "S.$": "$.work_info.user_id"
+          },
+          "SK": {
+            "S.$": "States.Format('UserConfig#{}', $.datetime.entered_time)"
+          }
+        }
+      }
+    },
+    "ReplaceConfig": {
+      "Type": "Pass",
+      "Next": "PutUserConfig",
+      "Parameters": {
+        "Item.$": "States.JsonMerge($.user_config.Item, $.replace_user_config.Item, false)"
+      },
+      "ResultPath": "$.user_config"
+    },
+    "PutUserConfig": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:putItem",
+      "Parameters": {
+        "TableName": "WORKSCHEDULE_DYNAMODB_TABLE_NAME",
+        "Item.$": "$.user_config.Item"
+      },
+      "Next": "WorkInfoFilter",
+      "ResultPath": null
+    },
+    "WorkInfoFilter": {
+      "Type": "Pass",
+      "Parameters": {
+        "work_info.$": "$.work_info"
+      },
+      "End": true
+    }
+  }
+}

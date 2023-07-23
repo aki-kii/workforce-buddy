@@ -1,11 +1,11 @@
 import * as cdk from "aws-cdk-lib";
 import { Template, Match } from "aws-cdk-lib/assertions";
-import * as WorkingHoursMaker from "../lib/work-schedule-maker-stack";
+import * as WorkScheduleMaker from "../lib/work-schedule-maker-stack";
 
 test("SQS Queue and SNS Topic Created", () => {
   const app = new cdk.App();
   // WHEN
-  const stack = new WorkingHoursMaker.WorkingHoursMakerStack(
+  const stack = new WorkScheduleMaker.WorkScheduleMakerStack(
     app,
     "MyTestStack"
   );

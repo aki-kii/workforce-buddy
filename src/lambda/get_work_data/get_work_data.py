@@ -1,22 +1,30 @@
-import os
 import json
 import logging
-import requests
+import os
+from typing import Optional
 
 import boto3
+import requests
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
+from slack_sdk.web.slack_response import SlackResponse
 
 # ロギングの初期設定
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 # 正常終了
-NORMAL_RESULT = "0000"
-# ファイル取得失敗
-FAILED_GET_FILE = "0010"
+NORMAL_RESULT: str = "0000"
+# 想定外が発生
+ERROR_RESULT: str = "9999"
 
 s3 = boto3.client("s3")
+
+
+# カスタムエラーを定義
+class WorkforceBuddyException(Exception):
+    pass
+
 
 def lambda_handler(event: dict, context: dict) -> dict:
     """
@@ -27,10 +35,16 @@ def lambda_handler(event: dict, context: dict) -> dict:
     event: dict
     context: dict
     """
-    body: dict = json.loads(event.get("body"))
-    logger.info(f"■body: {body}")
+    try:
+        logger.info(f"event: {event}")
+        body: dict = json.loads(event["body"])
+        logger.info(f"body: {body}")
+        res: dict = logic(body)
 
-    res: dict = logic(body)
+    except Exception as err:
+        logger.error(f"想定外のエラーが発生しました\n{err}")
+        res = create_response(NORMAL_RESULT)
+
     return res
 
 
@@ -38,147 +52,72 @@ def logic(body: dict) -> dict:
     """
     メインロジック
 
-    param
-    ------------
+    params
+    ------
     body: dict
         SlackAPIからのリクエストボディ
 
     return
-    ------------
+    ------
     dict
         API Gatewayへ返すレスポンス
     """
-    logger.debug("Start")
-
     # SlackAPIの認証リクエストを判定
-    if check_challenge(body):
+    if body["type"] == "url_verification":
         challenge: str = body["challenge"]
         res: dict = create_response(NORMAL_RESULT, challenge=challenge)
-        logger.debug(f"{__name__}: End")
-
+        logger.info("チャンレンジ認証チェックOK")
         return res
 
     # 環境情報を取得
-    token: str = os.environ["SLACK_ACCESS_TOKEN"]
-    s3_bucket: str = os.environ["BUCKET_NAME"]
-    s3_prefix: str = "raw/"
+    try:
+        token: str = os.environ["SLACK_BOT_TOKEN"]
+        bot_id: str = os.environ["SLACK_BOT_ID"]
+        s3_bucket: str = os.environ["BUCKET_NAME"]
 
-    logger.info(
-        f"■token: {token}, ■s3_bucket: {s3_bucket}, ■s3_prefix: {s3_prefix}"
-    )
+    except KeyError as err:
+        res = create_response(ERROR_RESULT)
+        logger.error(f"環境情報の読み出しに失敗しました\n{err}")
+        return res
 
     # ファイル情報を取得
     file_id: str = body["event"]["file_id"]
-    client: WebClient = WebClient(token=token)
-    logger.info(f"■file_id: {file_id}")
+    slack: WebClient = WebClient(token=token)
+    file_info: Optional[SlackResponse] = None
+    try:
+        file_info = slack.files_info(token=token, file=file_id)
+        logger.info(f"file_info: {file_info}")
 
-    # Slackからファイル情報を取得
-    file_info = get_file_info_for_slack(client, file_id, token)
-    logger.info(f"■file_info: {file_info}")
+    except SlackApiError as err:
+        res = create_response(ERROR_RESULT)
+        logger.error(f"ファイル情報の取得に失敗しました\n{err}")
+        return res
 
-    if file_info:
-        # ファイル取得
-        file_content: bytes = download_file_for_slack(file_info, token)
-        logger.info(f"■file_content: {file_content}")
+    # Slack BOTがアップロードしたファイルなら終了
+    if file_info["file"]["user"] == bot_id:
+        res = create_response(NORMAL_RESULT)
+        logger.info("Slack BOTがアップロードしたファイルです")
+        return res
+
+    # ファイル取得
+    file_content: Optional[bytes] = download_file(file_info, token)
 
     # ファイル取得失敗
     if not file_content:
-        res: dict = create_response(FAILED_GET_FILE)
-        logger.debug("End")
+        res = create_response(ERROR_RESULT)
         return res
 
-    # 格納するファイル名を作成
-    file_name: str = get_file_name(file_info)
-    s3_path: str = s3_prefix + file_name
-    logger.info(f"s3_path: {s3_path}")
-
     # S3へファイルを格納
-    s3_put_file(s3, file_content, s3_bucket, s3_path)
+    file_name: str = file_info["file"]["name"]
+    s3_path: str = "raw/" + file_name
+    s3.put_object(Bucket=s3_bucket, Body=file_content, Key=s3_path)
 
     res = create_response(NORMAL_RESULT)
 
-    logger.debug("End")
     return res
 
 
-def check_challenge(body: dict) -> bool:
-    """
-    SlackAPIからの認証リクエストを判定
-
-    param
-    ------------
-    body: dict
-        SlackAPIからのリクエストボディ
-
-    return
-    ------------
-    eool
-        認証リクエストが送られている場合はTrue
-    """
-    logger.debug("Start")
-
-    if body["type"] == "url_verification":
-        return True
-
-    logger.debug("End")
-    return False
-
-
-def get_file_name(file_info: str) -> str:
-    """
-    SlackAPIからファイル名を取得
-
-    param
-    ---------
-    file_info: dict
-        アップロードされたファイルの情報
-
-    return
-    ---------
-    str
-        ファイル名
-    """
-    logger.debug("Start")
-
-    # ファイル名の取得
-    file_name: str = file_info["file"].get("name")
-
-    logger.debug("End")
-    return file_name
-
-
-def get_file_info_for_slack(
-    client: WebClient, file_id: str, token: str
-) -> dict:
-    """
-    Slackにアップロードされたファイルの情報を取得
-
-    param
-    ---------
-    client: WebClient
-        SlackのWebClient
-    file_id: str
-        アップロードされたファイルのID
-
-    return
-    ---------
-    None
-    """
-    logger.debug("Start")
-
-    file_info = None
-    try:
-        file_info = client.files_info(token=token, file=file_id)
-
-    except SlackApiError as err:
-        logger.info(f"Error downloading file: {err}")
-
-    logger.debug("End")
-
-    return file_info
-
-
-def download_file_for_slack(file_info: dict, token: str):
+def download_file(file_info: SlackResponse, token: str) -> Optional[bytes]:
     """
     Slackにアップロードされたファイルを取得する
 
@@ -190,49 +129,24 @@ def download_file_for_slack(file_info: dict, token: str):
         Slackのアクセストークン
     """
     download_url: str = file_info["file"].get("url_private_download")
-    file_content = None
+    file_content: Optional[bytes] = None
     if download_url:
         headers = {"Authorization": f"Bearer {token}"}
         try:
             response: requests.Response = requests.get(
                 download_url, headers=headers
             )
-            logger.info(f"■response: {response}")
-            file_content: bytes = response.content
-            logger.info(f"■file_content: {file_content}")
+            logger.info(f"response: {response}")
+            file_content = response.content
+
         except Exception as err:
-            logger.error(err)
+            logger.error(f"ファイル情報の取得に失敗しました\n{err}")
+            return None
 
     return file_content
 
 
-def s3_put_file(s3_client, file: bytes, s3_bucket: str, s3_path: str) -> None:
-    """
-    S3にファイルをアップロードする
-
-    param
-    ------------
-    s3_client
-        S3のboto3クライアント
-    file: bytes
-        アップロード対象のファイル
-    s3_bucket: str
-        アップロード先のS3バケット名
-    s3_path: str
-        アップロードするS3のプレフィックス名 + ファイル名
-
-    return
-    -----------
-    None
-    """
-    logger.debug("Start")
-
-    s3_client.put_object(Bucket=s3_bucket, Body=file, Key=s3_path)
-
-    logger.debug("End")
-
-
-def create_response(result_code: str, challenge: str = None) -> dict:
+def create_response(result_code: str, challenge: Optional[str] = None) -> dict:
     """
     レスポンスを作成する
 
@@ -248,8 +162,6 @@ def create_response(result_code: str, challenge: str = None) -> dict:
     dict
         API Gatewayに返却するレスポンス
     """
-    logger.debug("Start")
-
     res: dict = {
         "statusCode": 200,
         "body": {
@@ -260,5 +172,4 @@ def create_response(result_code: str, challenge: str = None) -> dict:
     if challenge:
         res["body"]["challenge"] = challenge
 
-    logger.debug("End")
     return res
