@@ -133,7 +133,11 @@ def logic(event: dict) -> dict:
 
     # 勤務表の生成
     work_schedule_file: bytes = create_work_schedule(
-        template_file, template_config, work_month, converted_work_df
+        template_file,
+        template_config,
+        user_config,
+        work_month,
+        converted_work_df,
     )
 
     # 勤務表をアップロード
@@ -303,8 +307,9 @@ def create_one_month_dataframe(year_month: str) -> pd.DataFrame:
 def create_work_schedule(
     template_file: bytes,
     template_config: dict,
+    user_config: dict,
     work_month: str,
-    work_data: pd.DataFrame,
+    df: pd.DataFrame,
 ) -> bytes:
     """
     テンプレートファイルから勤務表を作成
@@ -312,8 +317,9 @@ def create_work_schedule(
     Args:
         template_file (bytes): テンプレートファイル
         template_config (dict): 作成する勤務表の設定
+        user_config (dict): ユーザ設定
         work_month (str): 勤務月(ex: '2023-07')
-        work_data (pd.DataFrame): 勤務データ
+        df (pd.DataFrame): 勤務データ
 
     Returns:
         bytes: 勤務表
@@ -324,6 +330,7 @@ def create_work_schedule(
     )
     year_month_cells: dict = json.loads(template_config["year_month_cells"])
     start_cells: dict = json.loads(template_config["start_cells"])
+    user_name_cell: str = template_config["user_name_cell"]
 
     # 日付フォーマットの変換
     year_month: datetime = datetime.strptime(work_month, "%Y-%m")
@@ -342,12 +349,12 @@ def create_work_schedule(
         ws[cell] = year_months[key]
 
     # 氏名の書き込み
-    pass
+    ws[user_name_cell] = user_config.get("user_name")
 
     # 勤務データの書き込み
     for column, cell in start_cells.items():
         for i, value in enumerate(
-            dataframe_to_rows(work_data[[column]], index=False, header=False)
+            dataframe_to_rows(df[[column]], index=False, header=False)
         ):
             current_cell = ws[cell].offset(i)
             current_cell.value = value[0]
