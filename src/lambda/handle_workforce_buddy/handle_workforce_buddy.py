@@ -48,9 +48,7 @@ def make_workschedule(event: Dict, say: Say) -> None:
         file_id: str = event["file_id"]
         user_id: str = event["user_id"]
         channel_id: str = event["channel_id"]
-        statemachine_arn: str = os.environ[
-            "WORKSCHEDULE_MAKER_STATEMACHINE_ARN"
-        ]
+        statemachine_arn: str = os.environ["WORKSCHEDULE_MAKER_KEY"]
     except Exception as err:
         logger.error("event, 環境変数の取得に失敗しました\n{err}")
         raise Exception

@@ -1,8 +1,8 @@
 {
-  "name": "working-hours-maker",
+  "name": "workforce-buddy",
   "version": "0.1.0",
   "bin": {
-    "working-hours-maker": "bin/working-hours-maker.js"
+    "working-hours-maker": "bin/workforce-buddy.js"
   },
   "scripts": {
     "build": "tsc",
