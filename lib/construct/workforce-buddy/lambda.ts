@@ -60,13 +60,6 @@ export class Lambda extends Construct {
     //-------------------------------------------
     // Lambda
 
-    // Lambda Layer
-    const slackBoltLayer = lambda.LayerVersion.fromLayerVersionArn(
-      this,
-      "slackBoltLayer",
-      "arn:aws:lambda:ap-northeast-1:080455691515:layer:BoltLayerDF8D0C33:2"
-    );
-
     // SSM ParameterStore
     const slackSigningSecret = ssm.StringParameter.valueForStringParameter(
       this,
@@ -79,6 +72,17 @@ export class Lambda extends Construct {
     const slackBotId = ssm.StringParameter.valueForStringParameter(
       this,
       "/workforce_buddy/slack_bot_id"
+    );
+    const slackBoltLayerArn = ssm.StringParameter.valueForStringParameter(
+      this,
+      "/lambda-layer/python/slack-bolt"
+    );
+
+    // Lambda Layer
+    const slackBoltLayer = lambda.LayerVersion.fromLayerVersionArn(
+      this,
+      "slackBoltLayer",
+      slackBoltLayerArn
     );
 
     /**

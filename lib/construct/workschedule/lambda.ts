@@ -66,27 +66,39 @@ export class Lambda extends Construct {
     //-------------------------------------------
     // Lambda
 
-    // Lambda Layer
-    const slackLayer = lambda.LayerVersion.fromLayerVersionArn(
-      this,
-      "slackLayer",
-      "arn:aws:lambda:ap-northeast-1:080455691515:layer:python_package_for_slack:2"
-    );
-    const pandasLayer = lambda.LayerVersion.fromLayerVersionArn(
-      this,
-      "pandasLayer",
-      "arn:aws:lambda:ap-northeast-1:770693421928:layer:Klayers-p39-pandas:15"
-    );
-    const openpyxlLayer = lambda.LayerVersion.fromLayerVersionArn(
-      this,
-      "openpyxlLayer",
-      "arn:aws:lambda:ap-northeast-1:080455691515:layer:python-lib_openpyxl:1"
-    );
-
     // SSM ParameterStore
     const slackBotToken = ssm.StringParameter.valueForStringParameter(
       this,
       "/workforce_buddy/slack_bot_token"
+    );
+    const slackLayerArn = ssm.StringParameter.valueForStringParameter(
+      this,
+      "/lambda-layer/python/slack-sdk"
+    );
+    const pandasLayerArn = ssm.StringParameter.valueForStringParameter(
+      this,
+      "/lambda-layer/python/pandas"
+    );
+    const openpyxlLayerArn = ssm.StringParameter.valueForStringParameter(
+      this,
+      "/lambda-layer/python/openpyxl"
+    );
+
+    // Lambda Layer
+    const slackLayer = lambda.LayerVersion.fromLayerVersionArn(
+      this,
+      "slackLayer",
+      slackLayerArn
+    );
+    const pandasLayer = lambda.LayerVersion.fromLayerVersionArn(
+      this,
+      "pandasLayer",
+      pandasLayerArn
+    );
+    const openpyxlLayer = lambda.LayerVersion.fromLayerVersionArn(
+      this,
+      "openpyxlLayer",
+      openpyxlLayerArn
     );
 
     /**
